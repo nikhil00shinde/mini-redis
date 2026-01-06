@@ -1,26 +1,45 @@
 import java.io.*;
 import java.net.*;
+import java.lang.Runnable;
 
 public class Server {
     public static void main(String args[]) throws IOException {
        ServerSocket serverSocket = new ServerSocket(6379);
+        System.out.println("Server is listening on port 6379");
 
-       
-       
-       Socket clientSocket = serverSocket.accept();
-       BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-       PrintWriter out = new PrintWriter(clientSocket.getOutputStream(),true);
+       while(true) {
+            try{
+                Socket clientSocket = serverSocket.accept();
+                new Thread(new ClientHandler(clientSocket)).start();
+            }catch(Exception e){
+                        System.out.println("Exception: " + e.getMessage());
+                }
+            }
+    }
+}
 
-       String message;
-       while((message = in.readLine()) != null) {
+class ClientHandler implements Runnable {
+    private Socket clientSocket;
 
-            System.out.println("Received: " + message);
 
-             out.println("PONG");
-             
-       }
-       
-             clientSocket.close();
-             serverSocket.close();
+    public ClientHandler(Socket socket) {
+        this.clientSocket = socket;
+    }
+
+    @Override
+    public void run() {
+        //Handle the client communication here
+        try (
+            PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))
+        ){
+            String inputLine;
+            while((inputLine = in.readLine()) != null){
+                out.println("Server received: " + inputLine);
+            }
+            clientSocket.close();
+        }catch(IOException e){
+            System.err.println("IOException in ClientHandler: " + e.getMessage());
+        }
     }
 }
