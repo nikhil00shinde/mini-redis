@@ -47,19 +47,17 @@ class ClientHandler implements Runnable {
                     out.println("OK");
                 }else if(parts[0].equals("GET")){
                     String key = parts[1];
-                    if(shared.containsKey(key)){
-                        out.println(shared.get(key));
-                    }else{
+                    Integer val = shared.get(key);
+                    if(val == null){
                         out.println("NULL");
+                    }else{
+                        out.println(val);
                     }
                 }else if(parts[0].equals("INCR")){
                     String key = parts[1];
-                    if(shared.containsKey(key)){
-                        int val = shared.get(key);
-                        shared.put(key,val+1);
-                    }else{
-                        out.println("NULL");
-                    }
+                    shared.merge(key, 1, Integer::sum);
+                    out.println("Success");
+                    
                 }else{
                     System.out.println("Unknown command: " + inputLine);
                 }

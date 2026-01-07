@@ -48,3 +48,17 @@ If you see code that:
     3. writes it back
 `Can another thread sneak in between these steps?`
 
+
+
+### ConcurrentHashMap
+- is a thread-safe implementation of the Map interface.
+
+    - Provides thread-safe operations without locking the entire map.
+    - Allows multiple threads to operate concurrently by dividing the map into segments.
+    - Support atomic operations like putIfAbsent(), replace() and remove()
+
+
+- It will Bucket Locking mechanism to insert or update" without using synchronized.
+- Instead of a global lock, ConcurrentHashMap uses a hybrid approach based on the state of the specific hash bucket (bin):
+    - The thread acquires a lock strictly on the Head Node of that specific bucket.
+    - Only threads attempting to write to this specific bucket are blocked. Threads accessing other buckets proceed in parallel.
