@@ -1,6 +1,14 @@
 import java.io.*;
 import java.net.*;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.lang.Runnable;
 
 public class Server {
@@ -9,15 +17,21 @@ public class Server {
     public static void main(String args[]) throws IOException {
        ServerSocket serverSocket = new ServerSocket(6379);
         System.out.println("Server is listening on port 6379");
-
+        // ExecutorService pool = Executors.newFixedThreadPool(8); // hides important details
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(8, 8, 2, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100),new ThreadPoolExecutor.AbortPolicy());
        while(true) {
             try{
                 Socket clientSocket = serverSocket.accept();
-                new Thread(new ClientHandler(clientSocket)).start();
-            }catch(Exception e){
-                        System.out.println("Exception: " + e.getMessage());
+                try{
+                    executor.execute(new ClientHandler(clientSocket));
+                }catch(RejectedExecutionException e){
+                    System.err.println("ERR Queue is Full");
                 }
+            }catch(Exception e){
+                System.out.println("Exception: " + e.getMessage());
             }
+        }
+        // executor.shutdown();
     }
 }
 
@@ -55,8 +69,8 @@ class ClientHandler implements Runnable {
                     }
                 }else if(parts[0].equals("INCR")){
                     String key = parts[1];
-                    shared.merge(key, 1, Integer::sum);
-                    out.println("Success");
+                    int val = shared.merge(key, 1, Integer::sum);
+                    out.println(val+" Success");
                     
                 }else{
                     System.out.println("Unknown command: " + inputLine);
