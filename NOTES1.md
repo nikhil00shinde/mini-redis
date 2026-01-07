@@ -24,3 +24,36 @@
     - `accept()`: thread sleeps until a client connects
 
 
+### Thread
+- A thread is an independent path of execution inside the same process.
+
+- Java program:
+    - is one process
+    - can have many threads 
+    - all threads share the same heap memory
+
+- Each thread has
+    - its own call stack
+    - its own program counter
+
+```
+Main thread:
+    accept client
+    start new thread
+    accept next client
+
+Client thread
+    read from client    <---- BLOCKS (only this client)
+```
+
+All thread share:
+- heap objects
+- static variables
+- collections
+
+
+##### Thread lifecycle
+    1. is created
+    2. start running
+    3. blocks / run
+    4. finishes
