@@ -1,14 +1,16 @@
 import java.io.*;
 import java.net.*;
 import java.util.concurrent.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.lang.Runnable;
 
 public class Server {
 
     final static ConcurrentHashMap<String, Value> shared = new ConcurrentHashMap<>();
+    static final BlockingQueue<String> aofQueue = new LinkedBlockingQueue<>();
+    static volatile boolean running = true;
+    
     public static void main(String args[]) throws IOException {
-       ServerSocket serverSocket = new ServerSocket(6379);
+        ServerSocket serverSocket = new ServerSocket(6379);
         System.out.println("Server is listening on port 6379");
         // ExecutorService pool = Executors.newFixedThreadPool(8); // hides important details
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
@@ -17,6 +19,32 @@ public class Server {
             TimeUnit.SECONDS, 
             new ArrayBlockingQueue<>(100),
             new ThreadPoolExecutor.AbortPolicy());
+
+
+            // First read the content from AOF file
+            FileWriter writeFile = new FileWriter("appendonly.aof",true);
+            readFromAOF();
+
+            Thread aofWriterThread = new Thread(() -> {
+                while(running || !aofQueue.isEmpty()) {
+                    try {
+                        String cmd = aofQueue.poll(100, TimeUnit.MILLISECONDS);
+                        if(cmd != null){
+                            writeFile.write(cmd + "\n");
+                            writeFile.flush();
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        try {
+                            writeFile.close();
+                        } catch (IOException ioException) {
+                            ioException.printStackTrace();  
+                        }
+                        break;
+                    }
+                }
+            });
+            aofWriterThread.start();
        while(true) {
            Socket clientSocket = serverSocket.accept();
            try{
@@ -36,6 +64,75 @@ public class Server {
         }
         // executor.shutdown();
     }
+
+    private static void readFromAOF(){
+             try(BufferedReader br = new BufferedReader(new FileReader("appendonly.aof"))){
+                String  line;
+                while ((line = br.readLine()) != null){
+                    if(line.isEmpty()) continue;
+                    line  = line.trim();
+                    String[] parts = line.split("\\s+");
+                    
+                    switch (parts[0].toUpperCase()){
+                        case "SET": {
+                            if(parts.length != 3) return;
+                            String key = parts[1];
+                            int value;
+                            try {
+                                value = Integer.parseInt(parts[2]);
+                            } catch (NumberFormatException e) {
+                                return;
+                            }
+                            shared.put(key, new Value(value,0));
+                            break;
+                        }
+
+                        case "INCR": {
+                            String key = parts[1];
+                            if(parts.length != 2) return;
+                            Value value = shared.compute(key, (k, old) -> {
+                                if(old == null) return new Value(1,0);
+                                old.val += 1;
+                                return old;
+                            });
+
+                            if(value != null){
+                                System.out.println("Updated Value");
+                            }
+                            break;
+                        }
+
+                        case "EXPIRE": {
+                            String key = parts[1];
+                            if(parts.length != 3) return;
+                            long seconds;
+                            try{
+                                seconds = Long.parseLong(parts[2]);
+                            } catch (NumberFormatException e) {
+                                return;
+                            }
+                            long now = System.currentTimeMillis();
+                            long nTime  = now + seconds*1000;
+
+                            Value value = shared.compute(key, (k,old) -> {
+                                if(old == null) return null;
+                                old.expireAt = nTime;
+                                return old;
+                            });
+                            if(value != null){
+                                System.out.println("Successfull Added");
+                            }
+                            break;
+                        }
+                        default: {
+                            return;
+                        }
+                    }
+                }
+             }catch (IOException e){
+                e.printStackTrace();
+             }
+    }
 }
 
 class Value {
@@ -50,10 +147,10 @@ class Value {
 class ClientHandler implements Runnable {
     private Socket clientSocket;
     private static final ConcurrentHashMap<String, Value> shared = Server.shared;
-
     public ClientHandler(Socket socket) {
         this.clientSocket = socket;
     }
+    private static final BlockingQueue<String> aofQueue = Server.aofQueue;
 
     @Override
     public void run() {
@@ -81,10 +178,10 @@ class ClientHandler implements Runnable {
                         } catch(NumberFormatException nfe){
                             out.println("ERR value is not an integer");
                             break;
-                        }
-
+                        }                
                         shared.put(key, new Value(value,0));
                         out.println("OK");
+                        aofQueue.offer(inputLine);
                         break;
                     }
                     case "GET": {
@@ -115,11 +212,10 @@ class ClientHandler implements Runnable {
                             if (old.expireAt != 0 && now >= old.expireAt){
                                 return new Value(1, 0);
                             }
-
                             old.val += 1;
                             return old;
                         });
-
+                        aofQueue.offer(inputLine);
                         out.println(updated.val);
                         break;
                     }
@@ -148,7 +244,7 @@ class ClientHandler implements Runnable {
                             old.expireAt = expireAt;
                             return old;
                         });
-
+                        aofQueue.offer(inputLine);
                         out.println(updated == null ? "0" : "1");
                         break;
                     }
@@ -177,7 +273,6 @@ class ClientHandler implements Runnable {
 
                         // No expiry
                         if (v.expireAt == 0) {out.println("-1"); break;}
-
                         long remainingMs = v.expireAt - now;
                         long remainingSec = remainingMs / 1000L;
                         out.println(Long.toString(remainingSec));
@@ -207,4 +302,5 @@ class ClientHandler implements Runnable {
         // out.println(val.val);
         return v;
     }
+    
 }
